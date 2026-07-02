@@ -110,37 +110,87 @@ const BASE_PRODUCTS = [
     nature: "Diesel pesado CI-4 em balde de 20 L, vendido para frotas (B2B). Ticket alto." },
 ];
 
-// Cada FASE muda as elasticidades (k), a vantagem de marca (advantage) e o tamanho do mercado (qmax),
-// gerando ótimos e conclusões diferentes. Calibradas para "copiar o concorrente" render ~60-69%.
-const PHASES = [
-  { title: "Mercado padrão",
-    teaser: "Um mês típico no mercado de lubrificantes: alguns óleos têm clientes fiéis, outros vivem em guerra de preço. Cabe a você descobrir quem é quem.",
-    scenario: "Motos e o sintético 5W-30 têm clientes fiéis (preço sobe); o 20W-50 de carro e o diesel de frota disputam no preço (desconte).",
-    params: {
-      m2050: { k: 0.055, advantage: 16, qmax: 190 }, m1030: { k: 0.05, advantage: 20, qmax: 160 },
-      c530: { k: 0.045, advantage: 26, qmax: 175 }, c2050: { k: 0.32, advantage: -3, qmax: 150 },
-      truck: { k: 0.025, advantage: -55, qmax: 95 } } },
-  { title: "Guerra dos sintéticos",
-    teaser: "Importados baratos entraram no mercado e mexeram na lealdade de algumas categorias — as curvas que você conhecia mudaram de lugar. Redescubra cada uma.",
-    scenario: "Importados baratos derrubam a lealdade no 5W-30 e no 10W-30 (agora elásticos); falta de mineral e contratos de frota deixam 20W-50 e diesel pouco sensíveis a preço (prêmio).",
-    params: {
-      m2050: { k: 0.05, advantage: 20, qmax: 180 }, m1030: { k: 0.30, advantage: -4, qmax: 150 },
-      c530: { k: 0.28, advantage: -7, qmax: 150 }, c2050: { k: 0.05, advantage: 16, qmax: 150 },
-      truck: { k: 0.02, advantage: 150, qmax: 60 } } },
-  { title: "Boom de frota",
-    teaser: "A safra aqueceu a demanda pesada e novas marcas chegaram nas linhas leves. As sensibilidades mudaram de novo — teste antes de apostar alto.",
-    scenario: "Explosão do diesel e do 5W-30 premium (pouco sensíveis — cobre mais); importados de moto acirram a briga no óleo de moto e no 20W-50 (desconte para vender).",
-    params: {
-      m2050: { k: 0.30, advantage: -4, qmax: 160 }, m1030: { k: 0.28, advantage: -3, qmax: 160 },
-      c530: { k: 0.045, advantage: 28, qmax: 185 }, c2050: { k: 0.32, advantage: -4, qmax: 150 },
-      truck: { k: 0.02, advantage: 175, qmax: 62 } } },
+// As elasticidades são SORTEADAS a cada fase por um gerador procedural com validação:
+// 2-3 produtos saem "fiéis" (inelásticos, prêmio compensa) e 2-3 saem "de guerra de preço" (elásticos).
+// O validador rejeita fases fáceis/degeneradas: copiar o concorrente rende sempre entre ~52% e ~72%.
+const PHASE_TITLES = ["Mercado em movimento", "Cartas embaralhadas", "Novos concorrentes",
+  "Reviravolta no atacado", "Temporada de mudanças", "Mercado imprevisível"];
+const PHASE_TEASERS = [
+  "As sensibilidades desta fase foram sorteadas: nada garante que o que funcionou antes funcione agora. Teste e descubra quem é quem.",
+  "Alguns óleos têm clientes fiéis, outros vivem em guerra de preço — e a combinação muda a cada fase. Observe o volume antes de apostar.",
+  "O mercado se rearranjou: lealdades novas, brigas de preço novas. Sacrifique rodadas cedo para mapear as curvas.",
 ];
-function buildProducts(i) {
-  const ph = PHASES[i % PHASES.length];
+const FALLBACK_PARAMS = {
+  m2050: { k: 0.055, advantage: 16, qmax: 190 }, m1030: { k: 0.05, advantage: 20, qmax: 160 },
+  c530: { k: 0.045, advantage: 26, qmax: 175 }, c2050: { k: 0.32, advantage: -3, qmax: 150 },
+  truck: { k: 0.025, advantage: -55, qmax: 95 },
+};
+// RNG com semente (determinístico em qualquer navegador) para fases compartilháveis por código
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function shuffleWith(arr, rnd) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+const seedToCode = (s) => (s >>> 0).toString(36).toUpperCase();
+const codeToSeed = (c) => {
+  const n = parseInt(String(c).trim().toUpperCase().replace(/[^0-9A-Z]/g, ""), 36);
+  return Number.isFinite(n) && n > 0 && n <= 0xffffffff ? n : null;
+};
+
+function genPhase(seedInput) {
+  const seed = seedInput != null ? seedInput : (Math.floor(Math.random() * 0xfffffffe) + 1);
+  const rnd = mulberry32(seed);
+  const R = (a, z) => a + rnd() * (z - a);
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const ids = shuffleWith(BASE_PRODUCTS.map((b) => b.id), rnd);
+    const inel = new Set(ids.slice(0, 2 + Math.floor(rnd() * 2))); // 2-3 inelásticos
+    const params = {};
+    for (const b of BASE_PRODUCTS) {
+      const c = b.competitor, t = b.pack === "balde";
+      params[b.id] = inel.has(b.id)
+        ? (t ? { k: R(0.018, 0.028), advantage: Math.round(R(0.26, 0.42) * c), qmax: Math.round(R(52, 72)) }
+             : { k: R(0.04, 0.07), advantage: Math.round(R(0.32, 0.62) * c), qmax: Math.round(R(150, 200)) })
+        : (t ? { k: R(0.02, 0.032), advantage: Math.round(R(-0.16, -0.07) * c), qmax: Math.round(R(80, 105)) }
+             : { k: R(0.2, 0.38), advantage: Math.round(R(-0.12, -0.01) * c), qmax: Math.round(R(130, 170)) });
+    }
+    // validação: ótimos plausíveis, mix garantido, dificuldade na banda
+    let copy = 0, best = 0, nPrem = 0, nDisc = 0, ok = true;
+    for (const b of BASE_PRODUCTS) {
+      const p = { ...b, ...params[b.id] };
+      const o = optimalOf(p);
+      if (o.price > p.max * 0.92 || o.price < p.cost * 1.08) { ok = false; break; }
+      const d = o.price / p.competitor - 1;
+      if (d >= 0.08) nPrem++;
+      if (d <= -0.03) nDisc++;
+      copy += totalMarginAt(p.competitor, p);
+      best += o.margin;
+    }
+    const cap = best > 0 ? copy / best : 0;
+    if (ok && cap >= 0.52 && cap <= 0.72 && nPrem >= 2 && nDisc >= 2) {
+      return { title: PHASE_TITLES[Math.floor(rnd() * PHASE_TITLES.length)],
+        teaser: PHASE_TEASERS[Math.floor(rnd() * PHASE_TEASERS.length)],
+        params, seed, code: seedToCode(seed) };
+    }
+  }
+  return { title: PHASE_TITLES[0], teaser: PHASE_TEASERS[0], params: FALLBACK_PARAMS, seed, code: seedToCode(seed) };
+}
+function buildProducts(phaseDef) {
   return BASE_PRODUCTS.map((b) => {
     const step = b.pack === "balde" ? 1 : 0.5;
     const start = Math.round((b.competitor * 0.9) / step) * step; // chute inicial ingênuo: -10% do concorrente
-    return { ...b, ...ph.params[b.id], price: start, history: [] };
+    return { ...b, ...phaseDef.params[b.id], price: start, history: [] };
   });
 }
 const elasticityAt = (price, p) => { const x = p.k * (price - refPrice(p)); return (p.k * price) / (1 + Math.exp(-x)); };
@@ -169,7 +219,9 @@ const TOTAL_ROUNDS = 8;
 export default function App() {
   const [phase, setPhase] = useState("intro");
   const [round, setRound] = useState(1);
-  const [products, setProducts] = useState(() => buildProducts(0));
+  const [phaseNum, setPhaseNum] = useState(1);
+  const [phaseDef, setPhaseDef] = useState(() => genPhase());
+  const [products, setProducts] = useState(() => buildProducts(phaseDef));
   const [shock, setShock] = useState(1);
   const [eventMsg, setEventMsg] = useState(EVENTS[1].msg);
   const [totalMargin, setTotalMargin] = useState(0);
@@ -182,7 +234,6 @@ export default function App() {
   const [earlyWin, setEarlyWin] = useState(false);
   const [selling, setSelling] = useState(null); // fase destino enquanto o popup roda
   const [prepMode, setPrepMode] = useState(null); // modo escolhido enquanto o popup de dicas roda
-  const [phaseIdx, setPhaseIdx] = useState(0);
   const totalRounds = mode === "lab" ? 6 : TOTAL_ROUNDS;
 
   const [displayCash, setDisplayCash] = useState(0);
@@ -212,11 +263,11 @@ export default function App() {
   }
   function start(m) {
     setMode(m);
-    const fresh = buildProducts(phaseIdx);
+    const fresh = buildProducts(phaseDef);
     setProducts(fresh); setTotalMargin(0); setParTotal(0); setDisplayCash(0); setRoundLog([]); setEarlyWin(false); setUi({});
     beginRound(1, fresh, m);
   }
-  const restart = () => { setPhaseIdx((i) => (i + 1) % PHASES.length); setPhase("intro"); };
+  const restart = () => { setPhaseNum((n) => n + 1); setPhaseDef(genPhase()); setPhase("intro"); };
   const setPrice = (id, price) => setProducts((ps) => ps.map((p) => (p.id === id ? { ...p, price } : p)));
 
   function sell() {
@@ -266,7 +317,8 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: "'Trebuchet MS','Segoe UI',system-ui,sans-serif" }}>
       <StyleTag />
       <div style={{ maxWidth: 660, margin: "0 auto", padding: "16px 14px 40px" }}>
-        {phase === "intro" && <Intro onStart={(m) => setPrepMode(m)} phaseIdx={phaseIdx} />}
+        {phase === "intro" && <Intro onStart={(m) => setPrepMode(m)} phaseNum={phaseNum} ph={phaseDef}
+          onCode={(c) => { const s = codeToSeed(c); if (s != null) { setPhaseDef(genPhase(s)); return true; } return false; }} />}
         {phase !== "intro" && phase !== "end" && (
           <>
             <Garage mood={mood} vehicles={vehicles} time={time} sceneKey={`${phase}-${round}`} />
@@ -290,7 +342,7 @@ export default function App() {
             {phase === "pricing" && <BigButton onClick={sell} label="LIBERAR OS PEDIDOS · VENDER" hint="Preços definidos? Atenda os clientes do mês." />}
           </>
         )}
-        {phase === "end" && <EndScreen total={totalMargin} par={parTotal} ratio={ratio} products={products} log={roundLog} mode={mode} phaseIdx={phaseIdx} earlyWin={earlyWin} finishedRound={round} totalRounds={totalRounds} onRestart={restart} />}
+        {phase === "end" && <EndScreen total={totalMargin} par={parTotal} ratio={ratio} products={products} log={roundLog} mode={mode} phaseNum={phaseNum} phaseCode={phaseDef.code} earlyWin={earlyWin} finishedRound={round} totalRounds={totalRounds} onRestart={restart} />}
       </div>
       {selling && <SellingPopup onDone={() => finishSelling(selling)} />}
       {prepMode && <PrepPopup modeLabel={prepMode === "lab" ? "🔬 PREPARANDO O LABORATÓRIO" : "🏭 PREPARANDO A DISTRIBUIDORA"}
@@ -640,9 +692,16 @@ function SellingPopup({ onDone }) {
 
 /* ---------------- Telas / UI ---------------- */
 
-function Intro({ onStart, phaseIdx }) {
+function Intro({ onStart, phaseNum, ph, onCode }) {
+  const [codeTxt, setCodeTxt] = useState("");
+  const [codeErr, setCodeErr] = useState(false);
+  const applyCode = () => {
+    if (!codeTxt.trim()) return;
+    const ok = onCode(codeTxt);
+    setCodeErr(!ok);
+    if (ok) setCodeTxt("");
+  };
   const demo = BASE_PRODUCTS;
-  const ph = PHASES[phaseIdx % PHASES.length];
   return (
     <div style={{ paddingTop: 6 }}>
       <div style={{ background: "linear-gradient(180deg,#ffffff 0%,#f3f6f9 70%,#e2e8ee 100%)",
@@ -672,9 +731,30 @@ function Intro({ onStart, phaseIdx }) {
       </div>
 
       <div style={{ marginTop: 14, background: C.panel2, border: `1px solid ${C.oil}`, borderRadius: 14, padding: "10px 14px", textAlign: "center" }}>
-        <div style={{ fontSize: 12, letterSpacing: 1.5, color: C.oil, fontWeight: 800 }}>FASE {phaseIdx + 1} · {ph.title.toUpperCase()}</div>
+        <div style={{ fontSize: 12, letterSpacing: 1.5, color: C.oil, fontWeight: 800 }}>FASE {phaseNum} · {ph.title.toUpperCase()}</div>
         <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3 }}>{ph.teaser}</div>
-        <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>As elasticidades mudam a cada fase — o óleo que aceitava preço alto pode virar guerra de preço, e vice-versa.</div>
+        <div style={{ fontSize: 11, color: C.faint, marginTop: 4 }}>As elasticidades são sorteadas a cada fase — jogar de novo nunca repete o gabarito.</div>
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.border}`, display: "flex",
+          alignItems: "center", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: C.muted }}>Código da fase:
+            <b style={{ color: C.oil, marginLeft: 5, letterSpacing: 1.5, fontSize: 13 }}>{ph.code}</b>
+          </span>
+          <span style={{ display: "flex", gap: 5, alignItems: "center" }}>
+            <input value={codeTxt} placeholder="código do amigo" maxLength={8}
+              onChange={(e) => { setCodeTxt(e.target.value.toUpperCase()); setCodeErr(false); }}
+              onKeyDown={(e) => e.key === "Enter" && applyCode()}
+              style={{ width: 110, fontSize: 12, fontWeight: 700, letterSpacing: 1, textAlign: "center",
+                color: C.text, background: C.panel, border: `1px solid ${codeErr ? C.red : C.border}`,
+                borderRadius: 8, padding: "5px 6px", outline: "none" }} />
+            <button onClick={applyCode} style={{ fontSize: 11, fontWeight: 800, color: C.blue,
+              background: "transparent", border: `1px solid ${C.blue}`, borderRadius: 8, padding: "5px 10px", cursor: "pointer" }}>
+              usar
+            </button>
+          </span>
+        </div>
+        <div style={{ fontSize: 10.5, color: codeErr ? C.red : C.faint, marginTop: 5 }}>
+          {codeErr ? "Código inválido — confira e tente de novo." : "Compartilhe o código para outra pessoa jogar exatamente a mesma fase e comparar o resultado."}
+        </div>
       </div>
 
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 16, padding: 16, marginTop: 14 }}>
@@ -988,9 +1068,16 @@ function GameOverModal({ total, par, ratio, best, items, mode, earlyWin, totalRo
   );
 }
 
-function EndScreen({ total, par, ratio, products, log, mode, phaseIdx, earlyWin, finishedRound, totalRounds, onRestart }) {
+function EndScreen({ total, par, ratio, products, log, mode, phaseNum, phaseCode, earlyWin, finishedRound, totalRounds, onRestart }) {
   const rank = [[0.92, "🏆 Mestre da Precificação", C.oil], [0.8, "💎 Gerente Sênior", C.green], [0.65, "📈 Analista Promissor", C.blue], [0.45, "🌱 Balconista", C.steel], [0, "😅 Ainda dá pra melhorar", C.red]].find(([t]) => ratio >= t);
-  const ph = PHASES[phaseIdx % PHASES.length];
+  // cenário revelador construído do sorteio real desta fase
+  const short = (p) => p.name.replace("LubLub ", "");
+  const prem = [], disc = [], mid = [];
+  for (const p of products) {
+    const d = optimalOf(p).price / p.competitor - 1;
+    (d >= 0.08 ? prem : d <= -0.03 ? disc : mid).push(short(p));
+  }
+  const scenarioText = `Nesta fase, ${prem.join(", ")} tinham clientes fiéis — o prêmio compensava. Já ${disc.join(", ")} disputavam no preço — desconto vendia mais.` + (mid.length ? ` ${mid.join(", ")} se comportou como commodity.` : "");
   const byE = [...products].sort((a, b) => elasticityAt(b.competitor, b) - elasticityAt(a.competitor, a));
   const elasLabel = (p) => { const i = byE.findIndex((x) => x.id === p.id); return i === 0 ? ["+ SENSÍVEL A PREÇO", C.red] : i === byE.length - 1 ? ["+ FIEL (inelástico)", C.green] : ["INTERMEDIÁRIO", C.oil]; };
   const best = (log || []).map((r) => ({ ...r, eff: r.par > 0 ? r.margin / r.par : 0 })).sort((a, b) => b.eff - a.eff)[0];
@@ -1031,7 +1118,7 @@ function EndScreen({ total, par, ratio, products, log, mode, phaseIdx, earlyWin,
 
       <h3 style={{ marginTop: 22, marginBottom: 2 }}>Os preços ideais desta fase — e o porquê</h3>
       <p style={{ color: C.muted, fontSize: 13, marginTop: 0 }}>
-        <b style={{ color: C.oil }}>Fase {phaseIdx + 1} · {ph.title}.</b> {ph.scenario}
+        <b style={{ color: C.oil }}>Fase {phaseNum} · código {phaseCode}.</b> {scenarioText} Compartilhe o código pra alguém enfrentar exatamente este mercado.
       </p>
       <div style={{ display: "grid", gap: 10 }}>
         {products.map((p) => {
