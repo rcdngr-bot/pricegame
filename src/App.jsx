@@ -645,28 +645,31 @@ function Intro({ onStart, phaseIdx }) {
   const ph = PHASES[phaseIdx % PHASES.length];
   return (
     <div style={{ paddingTop: 6 }}>
-      <div style={{ background: "linear-gradient(180deg,#ffffff 0%,#eef2f6 78%,#dbe2ea 100%)",
-        borderRadius: 16, padding: "16px 10px 10px", marginBottom: 10,
-        boxShadow: "inset 0 -3px 0 #c7d0da, 0 4px 14px rgba(0,0,0,.35)",
-        display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 8 }}>
-        {demo.map((p, i) => (
-          <div key={p.id} className="float-soft" style={{ animationDelay: (i * 0.25) + "s" }}>
-            <img src={PRODUCT_IMG[p.id]} alt={p.name}
-              style={{ height: p.pack === "balde" ? 96 : 88, width: "auto", maxWidth: "none", objectFit: "contain",
-                display: "block", filter: "drop-shadow(0 4px 5px rgba(0,0,0,.22))" }} />
-          </div>
-        ))}
-      </div>
-      <div style={{ textAlign: "center", fontSize: 12, letterSpacing: 3, color: C.oil, fontWeight: 700 }}>DISTRIBUIDORA DE LUBRIFICANTES</div>
-      <div style={{ display: "flex", justifyContent: "center", margin: "8px 0 4px" }}>
-        <div style={{ background: "#ffffff", borderRadius: 12, padding: "10px 22px",
-          boxShadow: "0 4px 14px rgba(0,0,0,.35)" }}>
-          <img src={LOGO_IMG} alt="LubLub" style={{ height: 42, width: "auto", maxWidth: "none", display: "block" }} />
+      <div style={{ background: "linear-gradient(180deg,#ffffff 0%,#f3f6f9 70%,#e2e8ee 100%)",
+        borderRadius: 18, padding: "20px 12px 12px", marginBottom: 12, textAlign: "center",
+        boxShadow: "inset 0 -3px 0 #c7d0da, 0 4px 14px rgba(0,0,0,.35)" }}>
+        <img src={LOGO_IMG} alt="LubLub" style={{ height: 44, width: "auto", maxWidth: "none", display: "inline-block" }} />
+        <div style={{ fontSize: 11.5, letterSpacing: 3, color: "#1c4587", fontWeight: 800, marginTop: 6 }}>
+          DISTRIBUIDORA DE LUBRIFICANTES
+        </div>
+        <div style={{ marginTop: 14, display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 8 }}>
+          {demo.map((p, i) => (
+            <div key={p.id} className="float-soft" style={{ animationDelay: (i * 0.25) + "s" }}>
+              <img src={PRODUCT_IMG[p.id]} alt={p.name}
+                style={{ height: p.pack === "balde" ? 92 : 84, width: "auto", maxWidth: "none", objectFit: "contain",
+                  display: "block", filter: "drop-shadow(0 4px 5px rgba(0,0,0,.22))" }} />
+            </div>
+          ))}
         </div>
       </div>
-      <p style={{ color: C.muted, fontSize: 16, textAlign: "center", marginTop: 2 }}>
-        Você comanda a distribuidora LubLub. Precifique 5 lubrificantes para revendas, oficinas e frotas — e descubra, na prática, quanto cada cliente tolera.
-      </p>
+
+      <div style={{ background: C.panel, border: `1px solid ${C.green}`, borderRadius: 14, padding: "12px 14px", textAlign: "center" }}>
+        <div style={{ fontSize: 12, letterSpacing: 1.5, color: C.green, fontWeight: 800 }}>🎯 SEU OBJETIVO</div>
+        <div style={{ fontSize: 16, fontWeight: 800, marginTop: 3 }}>Maximizar o LUCRO total da distribuidora</div>
+        <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3 }}>
+          Lucro = margem por unidade × volume vendido. Defina o preço de cada óleo, rodada a rodada, e encontre o equilíbrio que rende mais.
+        </div>
+      </div>
 
       <div style={{ marginTop: 14, background: C.panel2, border: `1px solid ${C.oil}`, borderRadius: 14, padding: "10px 14px", textAlign: "center" }}>
         <div style={{ fontSize: 12, letterSpacing: 1.5, color: C.oil, fontWeight: 800 }}>FASE {phaseIdx + 1} · {ph.title.toUpperCase()}</div>
